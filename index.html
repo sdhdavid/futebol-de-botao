@@ -113,7 +113,7 @@ button:focus-visible{outline:2px solid var(--chalk);outline-offset:2px}
         <li>Pull back from one of your buttons and let go to flick it. The further you pull, the harder it goes.</li>
         <li><em>Possession:</em> you keep playing as long as your team was the last to touch the ball, up to 5 flicks (the dots under your name). If you miss it, it last touched an opponent, or your 5 touches are used, the turn passes.</li>
         <li><em>Falta:</em> hit an opposing button before your button reaches the ball and it is a foul. The fouled button gets a free kick with the ball at its feet and the fouling team pushed back.</li>
-        <li><em>Out of play:</em> the felt runs on past the white lines, so buttons can go there to reach the ball. Once the ball is fully over a line it is out: over a touchline, a throw-in (lateral) to the other team; over a goal line, a corner (escanteio) if the defending team touched it last, otherwise a goal kick (tiro de meta). For the restart, your nearest button steps up behind the ball.</li>
+        <li><em>Out of play:</em> the felt runs on past the white lines, so buttons can go there to reach the ball. Once the ball is fully over a line it is out: over a touchline, a throw-in (lateral) to the other team; over a goal line, a corner (escanteio) if the defending team touched it last, otherwise a goal kick (tiro de meta). For the restart, your nearest button steps up behind the ball. As in football, the button that takes a throw-in or corner may not play the ball again until another button has touched it.</li>
         <li><em>Shots:</em> press Declare shot on goal before shooting. The other side then drags its goalkeeper into place and turns it with the round handle (or the mouse wheel). A goal from an undeclared shot does not count and gives a goal kick. Own goals always count.</li>
         <li><em>Goalkeeper kick:</em> on a goal kick, or whenever the ball rests in your own small area on your turn, you may pull back from the ball itself and send it upfield without using a button.</li>
         <li>First to 3 goals wins. The team that concedes takes the next kick-off.</li>
@@ -141,16 +141,16 @@ button:focus-visible{outline:2px solid var(--chalk);outline-offset:2px}
 //CORE-START
 const LW=1180, LH=736, X0=14, X1=1166, Y0=14, Y1=722, CX=590, CY=368;
 const GH=72, GY0=CY-GH, GY1=CY+GH, GD=56;
-const R=24, RB=11, MAXV=1450, DT=1/240;
+const R=19, RB=9, MAXV=1450, DT=1/240;
 // goal lines and touchlines; the felt runs on past them (run-off) up to the wooden frame
 const GL0=X0+GD, GL1=X1-GD, TY0=Y0+64, TY1=Y1-64;
-const POSTS=[[GL0,GY0],[GL0,GY1],[GL1,GY0],[GL1,GY1]], PR=6;
+const POSTS=[[GL0,GY0],[GL0,GY1],[GL1,GY0],[GL1,GY1]], PR=5;
 const GBOX=[{x:X0+GD/2,y:CY,a:0},{x:X1-GD/2,y:CY,a:0}];
-const KHW=10, KHH=30, KX=[GL0+22,GL1-22];
+const KHW=8.5, KHH=26, KX=[GL0+22,GL1-22];
 function keeperHome(){return [{x:KX[0],y:CY,a:0},{x:KX[1],y:CY,a:0}]}
 // push a disc out of a (possibly tilted) goalkeeper block; returns the contact normal or null
 function kpush(k,b,t,hw,hh){
-  const KHW=hw||10, KHH=hh||30;
+  const KHW=hw||8.5, KHH=hh||26;
   const ca=Math.cos(k.a), sa=Math.sin(k.a), dx=b.x-k.x, dy=b.y-k.y;
   const lx=dx*ca+dy*sa, ly=-dx*sa+dy*ca;
   let ex=lx-(lx<-KHW?-KHW:lx>KHW?KHW:lx), ey=ly-(ly<-KHH?-KHH:ly>KHH?KHH:ly);
@@ -174,7 +174,7 @@ function makeState(kick){
     b.push({x,y,vx:0,vy:0,r:R,m:1,team:t,n:NUMS[i]});
   });
   b.push({x:CX,y:CY,vx:0,vy:0,r:RB,m:0.22,team:-1,n:0});
-  return {b,keep:keeperHome(),goal:-1,out:null,touched:false,shooter:-1,foul:-1,last:-1};
+  return {b,keep:keeperHome(),goal:-1,out:null,touched:false,shooter:-1,foul:-1,last:-1,taker:-1};
 }
 function atRest(s){for(const b of s.b) if(b.vx!==0||b.vy!==0) return false; return true}
 
@@ -201,7 +201,7 @@ function step(s,dt,ev){
         a.vx-=J*ia*nx; a.vy-=J*ia*ny; b.vx+=J*ib*nx; b.vy+=J*ib*ny;
         if(ev) ev(vn,a.team<0||b.team<0);
         if((i===s.shooter&&b.team<0)||(j===s.shooter&&a.team<0)) s.touched=true;
-        if(a.team<0) s.last=b.team; else if(b.team<0) s.last=a.team;
+        if(a.team<0){s.last=b.team; if(j!==s.taker) s.taker=-1} else if(b.team<0){s.last=a.team; if(i!==s.taker) s.taker=-1}
         else if(s.foul<0&&!s.touched&&a.team!==b.team){ if(i===s.shooter) s.foul=j; else if(j===s.shooter) s.foul=i; }
       }
     }
@@ -221,7 +221,7 @@ function step(s,dt,ev){
     for(let t=0;t<2;t++){
       const nn=kpush(s.keep[t],b,t); if(!nn) continue;
       const vn=b.vx*nn[0]+b.vy*nn[1];
-      if(vn<0){b.vx-=1.5*vn*nn[0]; b.vy-=1.5*vn*nn[1]; if(b.team<0) s.last=t; if(ev) ev(-vn*0.7,false)}
+      if(vn<0){b.vx-=1.5*vn*nn[0]; b.vy-=1.5*vn*nn[1]; if(b.team<0){s.last=t; s.taker=-1} if(ev) ev(-vn*0.7,false)}
     }
     // goal frames and outer cushions
     if(b.team<0){
@@ -259,7 +259,7 @@ function outAward(o,last){
 // is the ball resting inside this team's own small area?
 function inArea(s,team){const b=s.b[s.b.length-1]; return Math.abs(b.y-CY)<105&&(team===0?b.x<GL0+56:b.x>GL1-56)}
 function simulate(s,i,ax,ay,p,team){
-  const c={b:s.b.map(o=>({...o})),keep:s.keep.map(k=>({...k})),goal:-1,out:null,touched:false,shooter:i,foul:-1,last:-1};
+  const c={b:s.b.map(o=>({...o})),keep:s.keep.map(k=>({...k})),goal:-1,out:null,touched:false,shooter:i,foul:-1,last:-1,taker:-1};
   const kick=c.b[i].team<0, v=p*MAXV*(kick?1.2:1);
   c.b[i].vx=ax*v; c.b[i].vy=ay*v; if(kick) c.last=team;
   for(let k=0;k<2600;k++){step(c,DT,null); if(c.goal>=0||c.out||atRest(c)) break}
@@ -275,7 +275,7 @@ function* pickGen(s,team,declared,lastTouch){
   const ownBall=inArea(s,team);
   for(let i=0;i<s.b.length;i++){
     const b=s.b[i];
-    if(b.team<0){if(!ownBall) continue}else if(b.team!==team) continue;
+    if(b.team<0){if(!ownBall) continue}else if(b.team!==team||i===s.taker) continue;
     const dirs=[];
     if(b.team<0){
       const base=Math.atan2(CY-b.y,gx-b.x);
@@ -315,7 +315,7 @@ function* pickGen(s,team,declared,lastTouch){
 (function(){
 const $=id=>document.getElementById(id);
 const cv=$('cv'), ctx=cv.getContext('2d'), bg=document.createElement('canvas'), stage=$('stage');
-const NAMES=['Casa','Visitante'], TARGET=3, MAXDRAG=170, TOUCHES=5;
+const NAMES=['Casa','Visitante'], TARGET=3, MAXDRAG=150, TOUCHES=5;
 const KIT=[
   {base:'#f5b81c',lite:'#ffd866',dark:'#a86f05',inner:'#fff5d6',text:'#3a2703'},
   {base:'#3d7bef',lite:'#7ea9ff',dark:'#173a8c',inner:'#eef4ff',text:'#10244f'}
@@ -323,7 +323,7 @@ const KIT=[
 let S, score=[0,0], turn=0, touches=0, phase='aim', mode='cpu', lastScorer=0;
 let scale=1, dpr=1, portrait=false, drag=null, cpuPlan=null, cpuAt=0, goalAt=0, now=0, acc=0, last=0;
 let sound=true, ac=null, lastTick=0;
-let think=null, noteAt=0, declared=false, kpAt=0, kdrag=null, after=null, flashAt=0, note='';
+let take=false, think=null, noteAt=0, declared=false, kpAt=0, kdrag=null, after=null, flashAt=0, note='';
 
 try{const m=localStorage.getItem('fdb-mode'); if(m==='2p'||m==='cpu') mode=m; if(localStorage.getItem('fdb-sound')==='0') sound=false}catch(e){}
 
@@ -354,13 +354,14 @@ function newMatch(){score=[0,0]; after=null; $('over').hidden=true; $('goal').hi
 function flash(text,ms,fn){const g=$('goal'); g.firstElementChild.textContent=text; g.classList.toggle('long',text.length>8); g.hidden=true; void g.offsetWidth; g.hidden=false; flashAt=now+ms; after=fn}
 function launch(i,ax,ay,p){
   const b=S.b[i], kick=b.team<0, v=p*MAXV*(kick?1.2:1); b.vx=ax*v; b.vy=ay*v;
+  if(take){take=false; S.taker=kick?-1:i}
   S.shooter=i; S.touched=false; S.foul=-1; S.last=kick?turn:-1; S.goal=-1; S.out=null; touches++; phase='moving'; drag=null; cpuPlan=null; hud();
 }
 function endFlick(){
   const foul=S.foul; S.shooter=-1; declared=false;
   if(foul>=0){phase='wait'; note='Foul on '+NAMES[S.b[foul].team]+'. Free kick.'; flash('FALTA!',1300,()=>freeKick(foul)); hud(); return}
-  if(S.last!==turn){turn=1-turn; touches=0}
-  else if(touches>=TOUCHES){turn=1-turn; touches=0; note=TOUCHES+' touches used. Ball to '+NAMES[turn]+'.'; noteAt=now+2600}
+  if(S.last!==turn){turn=1-turn; touches=0; S.taker=-1}
+  else if(touches>=TOUCHES){turn=1-turn; touches=0; S.taker=-1; note=TOUCHES+' touches used. Ball to '+NAMES[turn]+'.'; noteAt=now+2600}
   phase='aim'; cpuAt=now+700; hud();
 }
 function onGoal(){
@@ -405,7 +406,7 @@ function settle(ball,fixed,clearTeam,clearR){
     kpush(S.keep[0],b,0); kpush(S.keep[1],b,1); kpush(GBOX[0],b,0,GD/2,GH); kpush(GBOX[1],b,1,GD/2,GH);
     b.x=clamp(b.x,X0+R,X1-R); b.y=clamp(b.y,Y0+R,Y1-R);
   }
-  S.goal=-1; S.out=null; S.foul=-1; S.last=-1; S.touched=false; S.shooter=-1;
+  S.goal=-1; S.out=null; S.foul=-1; S.last=-1; S.touched=false; S.shooter=-1; S.taker=-1; take=false;
 }
 function restart(t){think=null; turn=t; touches=0; declared=false; phase='aim'; cpuPlan=null; drag=null; cpuAt=now+800; hud()}
 function freeKick(fi){
@@ -422,7 +423,7 @@ function setPiece(t,bx,by,ox,oy){
   let tk=null, bd=1e9;
   for(const b of S.b) if(b.team===t){const d=Math.hypot(b.x-bx,b.y-by); if(d<bd){bd=d;tk=b}}
   if(tk&&(ox||oy)){tk.x=bx+ox*(R+RB+3); tk.y=by+oy*(R+RB+3)}
-  settle(ball,ox||oy?tk:null,1-t,140); restart(t);
+  settle(ball,ox||oy?tk:null,1-t,140); take=!!(ox||oy); restart(t);
 }
 function throwIn(t,o){setPiece(t,clamp(o.x,GL0+40,GL1-40),o.y,0,o.y<CY?-1:1)}
 function corner(t,o){const top=o.y<CY; setPiece(t,o.t===0?GL0+3:GL1-3,top?TY0+3:TY1-3,o.t===0?-0.71:0.71,top?-0.71:0.71)}
@@ -473,6 +474,7 @@ function hud(){
          :inArea(S,turn)? who+'. Ball in your area: flick a button, or pull back from the ball itself for a goalkeeper kick.'
          :touches===TOUCHES-1? who+'. Last touch: shoot or pass.'
          :touches===0? who+'. Pull back from a '+(turn?'blue':'yellow')+' button and let go.'
+         :S.taker>=0? who+'. Number '+S.b[S.taker].n+' took the restart: another button must play the ball next.'
                      : who+'. You kept the ball, flick again.';
     }
   }
@@ -596,10 +598,10 @@ function drawKeeper(t){
   ctx.save(); ctx.translate(kp.x,kp.y); ctx.rotate(kp.a);
   ctx.fillStyle=k.dark; rrect(ctx,-KHW,-KHH,KHW*2,KHH*2,6); ctx.fill();
   ctx.fillStyle=k.base; rrect(ctx,-KHW+2,-KHH+2,KHW*2-4,KHH*2-4,4.5); ctx.fill();
-  ctx.fillStyle=k.inner; ctx.fillRect(-KHW+2,-7,KHW*2-4,14);
+  ctx.fillStyle=k.inner; ctx.fillRect(-KHW+2,-6,KHW*2-4,12);
   if(phase==='keeper'&&t===1-turn){ctx.strokeStyle='rgba(243,236,216,'+(0.55+0.35*Math.sin(now/200))+')'; ctx.lineWidth=2.5; rrect(ctx,-KHW-5,-KHH-5,KHW*2+10,KHH*2+10,10); ctx.stroke()}
   ctx.restore();
-  ctx.fillStyle=k.text; ctx.font='400 11px "Bowlby One","Arial Black",sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle=k.text; ctx.font='400 9.5px "Bowlby One","Arial Black",sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.save(); ctx.translate(kp.x,kp.y); if(portrait) ctx.rotate(Math.PI/2); ctx.fillText('1',0,1); ctx.restore();
 }
 function drawBall(b){
@@ -658,7 +660,7 @@ function draw(){
     ctx.fillStyle=on?'#f3ecd8':'rgba(243,236,216,.85)'; disc(ctx,n.x,n.y,on?11:9); ctx.fill();
     ctx.strokeStyle='#15100c'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(n.x,n.y,4.5,0.6,5.4); ctx.stroke();
   }
-  for(let i=0;i<S.b.length-1;i++){const b=S.b[i]; drawButton(b,b.team===turn?pulse:(drag&&drag.i===i?0.9:0))}
+  for(let i=0;i<S.b.length-1;i++){const b=S.b[i], no=i===S.taker&&phase==='aim'; if(no) ctx.globalAlpha=0.5; drawButton(b,b.team===turn&&!no?pulse:(drag&&drag.i===i?0.9:0)); ctx.globalAlpha=1}
   if(drag&&S.b[drag.i].team>=0){drawButton(S.b[drag.i],0.9)}
   drawBall(ball);
   if(humanTurn()&&inArea(S,turn)){ctx.strokeStyle='rgba(243,236,216,'+(drag&&S.b[drag.i]===ball?0.9:pulse+0.2)+')'; ctx.lineWidth=2.5; disc(ctx,ball.x,ball.y,ball.r+6); ctx.stroke()}
@@ -688,7 +690,7 @@ cv.addEventListener('pointerdown',e=>{
   if(!humanTurn()) return;
   const p=toL(e), reach=Math.max(R*1.7,46/scale); let bi=-1, bd=reach;
   const own=inArea(S,turn);
-  S.b.forEach((b,i)=>{if(b.team!==turn&&!(b.team<0&&own)) return; const d=Math.hypot(b.x-p.x,b.y-p.y); if(d<bd){bd=d;bi=i}});
+  S.b.forEach((b,i)=>{if((b.team!==turn&&!(b.team<0&&own))||i===S.taker) return; const d=Math.hypot(b.x-p.x,b.y-p.y); if(d<bd){bd=d;bi=i}});
   if(bi<0) return;
   drag={i:bi,x:p.x,y:p.y,id:e.pointerId}; try{cv.setPointerCapture(e.pointerId)}catch(_){}
   e.preventDefault();
