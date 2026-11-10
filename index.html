@@ -174,7 +174,7 @@ function makeState(kick){
     b.push({x,y,vx:0,vy:0,r:R,m:1,team:t,n:NUMS[i]});
   });
   b.push({x:CX,y:CY,vx:0,vy:0,r:RB,m:0.22,team:-1,n:0});
-  return {b,keep:keeperHome(),goal:-1,out:null,touched:false,shooter:-1,foul:-1,last:-1,taker:-1};
+  return {b,keep:keeperHome(),goal:-1,out:null,touched:false,shooter:-1,foul:-1,last:-1,taker:-1,setp:-1};
 }
 function atRest(s){for(const b of s.b) if(b.vx!==0||b.vy!==0) return false; return true}
 
@@ -319,57 +319,86 @@ function evalRest(r,team,lastTouch){
   }
   return sc;
 }
-// CPU: try a spread of flicks in the simulator and keep the best outcome.
-function* pickGen(s,team,declared,lastTouch){
-  const n=s.b.length-1, ball=s.b[n], gx=team===1?GL0:GL1;
-  let best=null, bestSc=-1e9, canScore=false;
-  const ownBall=inArea(s,team), near=Math.hypot(gx-ball.x,CY-ball.y)<560;
+// the lines worth trying for `team`: [disc index, ax, ay]. lite = a smaller set, for looking ahead
+function cands(s,team,lite,declared){
+  const n=s.b.length-1, ball=s.b[n], gx=team===1?GL0:GL1, out=[];
+  const ownBall=inArea(s,team)&&!(s.setp>=0), near=Math.hypot(gx-ball.x,CY-ball.y)<560;
   const gAng=Math.atan2(CY-ball.y,gx-ball.x);
   // directions we may want the ball to travel in: at the goal mouth, and fanned out for passes and wing play
   const want=[];
-  for(const ty of (declared?[0,-15,15,-30,30,-44,44,-56,56]:near?[0,-28,28,-52,52]:[0,-45,45])){let dx=gx-ball.x, dy=CY+ty-ball.y; const l=Math.hypot(dx,dy)||1; want.push([dx/l,dy/l])}
-  for(const o of [-1.1,-0.6,-0.3,0.3,0.6,1.1]) want.push([Math.cos(gAng+o),Math.sin(gAng+o)]);
+  for(const ty of (lite?[0,-40,40]:declared?[0,-15,15,-30,30,-44,44,-56,56]:near?[0,-28,28,-52,52]:[0,-45,45])){let dx=gx-ball.x, dy=CY+ty-ball.y; const l=Math.hypot(dx,dy)||1; want.push([dx/l,dy/l])}
+  for(const o of (lite?[-0.6,0.6]:[-1.1,-0.6,-0.3,0.3,0.6,1.1])) want.push([Math.cos(gAng+o),Math.sin(gAng+o)]);
   for(let i=0;i<=n;i++){
     const b=s.b[i];
     if(b.team<0){if(!ownBall) continue}else if(b.team!==team||i===s.taker) continue;
-    const dirs=[];
+    // at a throw-in or corner the button standing over the ball takes it
+    if(s.setp>=0&&s.b[s.setp].team===team&&i!==s.setp) continue;
     if(b.team<0){
-      for(const o of [-0.9,-0.6,-0.3,0,0.3,0.6,0.9]) dirs.push([Math.cos(gAng+o),Math.sin(gAng+o)]);
-    }else{
-      const add=(ax,ay)=>{
-        for(const d of dirs) if(d[0]*ax+d[1]*ay>0.9995) return;
-        if(firstHit(s,i,ax,ay)===n) dirs.push([ax,ay]); // skip lines blocked by another button
-      };
-      for(const w of want){
-        let ax=ball.x-w[0]*(R+RB-1)-b.x, ay=ball.y-w[1]*(R+RB-1)-b.y; const al=Math.hypot(ax,ay)||1; ax/=al; ay/=al;
-        if(ax*w[0]+ay*w[1]>0.2) add(ax,ay);
-      }
-      {let ax=ball.x-b.x, ay=ball.y-b.y; const al=Math.hypot(ax,ay)||1; add(ax/al,ay/al)}
+      for(const o of (lite?[-0.5,0,0.5]:[-0.9,-0.6,-0.3,0,0.3,0.6,0.9])) out.push([i,Math.cos(gAng+o),Math.sin(gAng+o)]);
+      continue;
     }
-    for(const d of dirs) for(const p of [0.3,0.5,0.75,1]){
-      const r=simulate(s,i,d[0],d[1],p,team);
-      let sc;
-      if(r.foul>=0) sc=-300;
-      else if(r.goal===team){
-        canScore=true;
-        if(!declared) sc=-150;
-        else{
-          // prefer shots that still go in when the flick is a little off
-          sc=1000-p*10; const a=Math.atan2(d[1],d[0]);
-          for(const e of [-0.022,0.022]){const t=simulate(s,i,Math.cos(a+e),Math.sin(a+e),p,team); if(t.goal===team&&t.foul<0) sc+=300; yield}
-        }
-      }
-      else if(r.goal>=0) sc=-1000;
-      else if(r.out){
-        const a=outAward(r.out,r.last<0?team:r.last);
-        sc=a.t===team?(a.k==='corner'?75:a.k==='throw'?35:20):(a.k==='corner'?-150:-70);
-      }else sc=evalRest(r,team,lastTouch);
-      if(sc>bestSc){bestSc=sc;best={i,ax:d[0],ay:d[1],p}}
-      yield;
+    const k0=out.length;
+    const add=(ax,ay)=>{
+      for(let k=k0;k<out.length;k++) if(out[k][1]*ax+out[k][2]*ay>0.9995) return;
+      if(firstHit(s,i,ax,ay)===n) out.push([i,ax,ay]); // skip lines blocked by another button
+    };
+    for(const w of want){
+      let ax=ball.x-w[0]*(R+RB-1)-b.x, ay=ball.y-w[1]*(R+RB-1)-b.y; const al=Math.hypot(ax,ay)||1; ax/=al; ay/=al;
+      if(ax*w[0]+ay*w[1]>0.2) add(ax,ay);
     }
+    let ax=ball.x-b.x, ay=ball.y-b.y; const al=Math.hypot(ax,ay)||1; ax/=al; ay/=al; add(ax,ay);
+    // right next to the ball (set pieces, dribbles): also clip it off-centre to send it either side
+    if(al<R+RB+14){const a=Math.atan2(ay,ax); for(const o of (lite?[-0.4,0.4]:[-0.75,-0.5,-0.25,0.25,0.5,0.75])) add(Math.cos(a+o),Math.sin(a+o))}
   }
-  if(best) best.canScore=canScore;
-  return best;
+  return out;
+}
+// value of a finished flick for the team that made it; goalVal = what scoring is worth
+function outcome(r,team,lastTouch,goalVal){
+  if(r.foul>=0) return -300;
+  if(r.goal===team) return goalVal;
+  if(r.goal>=0) return -1000;
+  if(r.out){
+    const a=outAward(r.out,r.last<0?team:r.last);
+    return a.t===team?(a.k==='corner'?75:a.k==='throw'?35:20):(a.k==='corner'?-150:-70);
+  }
+  return evalRest(r,team,lastTouch);
+}
+// CPU: simulate every candidate flick, then look one flick further for the most promising ones:
+// our own follow-up if we keep the ball, the opponent's best reply if we lose it.
+// left = flicks left in this possession, counting this one.
+function* pickGen(s,team,declared,left){
+  if(left===true) left=1; else if(!left) left=9;
+  const last=left<=1, list=[]; let canScore=false;
+  for(const c of cands(s,team,false,declared)) for(const p of [0.3,0.5,0.75,1]){
+    const r=simulate(s,c[0],c[1],c[2],p,team); let sc, term=true;
+    if(r.goal===team&&r.foul<0){
+      canScore=true;
+      if(!declared) sc=-150;
+      else{
+        // prefer shots that still go in when the flick is a little off
+        sc=1000-p*10; const a=Math.atan2(c[2],c[1]);
+        for(const e of [-0.022,0.022]){const t=simulate(s,c[0],Math.cos(a+e),Math.sin(a+e),p,team); if(t.goal===team&&t.foul<0) sc+=300; yield}
+      }
+    }else{sc=outcome(r,team,last,0); term=r.foul>=0||r.goal>=0||!!r.out}
+    list.push({i:c[0],ax:c[1],ay:c[2],p,sc,r,term,deep:term});
+    yield;
+  }
+  list.sort((a,b)=>b.sc-a.sc);
+  let k=0;
+  for(const m of list){
+    if(m.term) continue; if(k++>=6) break;
+    const r=m.r, keep=r.last===team&&!last, mover=keep?team:1-team;
+    const gv=canDeclare(r,mover)?400:-150, l2=keep&&left-1<=1;
+    let b2=-1e9;
+    for(const c of cands(r,mover,true,false)) for(const p of [0.45,0.85]){
+      const v=outcome(simulate(r,c[0],c[1],c[2],p,mover),mover,l2,gv); if(v>b2) b2=v; yield;
+    }
+    if(b2>-1e9) m.sc=keep?0.4*m.sc+0.6*b2:m.sc-0.5*Math.max(0,b2-100);
+    m.deep=true;
+  }
+  let best=null;
+  for(const m of list) if(m.deep&&(!best||m.sc>best.sc)) best=m;
+  return best&&{i:best.i,ax:best.ax,ay:best.ay,p:best.p,canScore};
 }
 //CORE-END
 
@@ -416,6 +445,7 @@ function flash(text,ms,fn){const g=$('goal'); g.firstElementChild.textContent=te
 function launch(i,ax,ay,p){
   const b=S.b[i], kick=b.team<0, v=p*MAXV*(kick?1.2:1); b.vx=ax*v; b.vy=ay*v;
   if(take){take=false; S.taker=kick?-1:i}
+  S.setp=-1;
   S.shooter=i; S.touched=false; S.foul=-1; S.last=kick?turn:-1; S.goal=-1; S.out=null; touches++; phase='moving'; drag=null; cpuPlan=null; hud();
 }
 function endFlick(){
@@ -467,7 +497,7 @@ function settle(ball,fixed,clearTeam,clearR){
     kpush(S.keep[0],b,0); kpush(S.keep[1],b,1); kpush(GBOX[0],b,0,GD/2,GH); kpush(GBOX[1],b,1,GD/2,GH);
     b.x=clamp(b.x,X0+R,X1-R); b.y=clamp(b.y,Y0+R,Y1-R);
   }
-  S.goal=-1; S.out=null; S.foul=-1; S.last=-1; S.touched=false; S.shooter=-1; S.taker=-1; take=false;
+  S.goal=-1; S.out=null; S.foul=-1; S.last=-1; S.touched=false; S.shooter=-1; S.taker=-1; S.setp=-1; take=false;
 }
 function restart(t){think=null; turn=t; touches=0; declared=false; phase='aim'; cpuPlan=null; drag=null; cpuAt=now+800; hud()}
 function freeKick(fi){
@@ -484,7 +514,7 @@ function setPiece(t,bx,by,ox,oy){
   let tk=null, bd=1e9;
   for(const b of S.b) if(b.team===t){const d=Math.hypot(b.x-bx,b.y-by); if(d<bd){bd=d;tk=b}}
   if(tk&&(ox||oy)){tk.x=bx+ox*(R+RB+3); tk.y=by+oy*(R+RB+3)}
-  settle(ball,ox||oy?tk:null,1-t,140); take=!!(ox||oy); restart(t);
+  settle(ball,ox||oy?tk:null,1-t,140); take=!!(ox||oy); S.setp=take&&tk?S.b.indexOf(tk):-1; restart(t);
 }
 function throwIn(t,o){setPiece(t,clamp(o.x,GL0+40,GL1-40),o.y,0,o.y<CY?-1:1)}
 function corner(t,o){const top=o.y<CY; setPiece(t,o.t===0?GL0+3:GL1-3,top?TY0+3:TY1-3,o.t===0?-0.71:0.71,top?-0.71:0.71)}
@@ -559,7 +589,7 @@ function update(dt){
   if(phase==='aim'&&mode==='cpu'&&turn===1&&$('help').hidden&&$('menu').hidden){
     if(!cpuPlan&&now>=cpuAt){
       // think in slices of ~8 ms per frame so the table keeps animating
-      if(!think) think=pickGen(S,1,declared,touches>=TOUCHES-1);
+      if(!think) think=pickGen(S,1,declared,TOUCHES-touches);
       const t0=performance.now(); let r;
       do r=think.next(); while(!r.done&&performance.now()-t0<8);
       if(!r.done) return;
