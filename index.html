@@ -6,9 +6,11 @@
 <title>Futebol de Botão</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bowlby+One&family=Figtree:wght@400;600;700&display=swap">
 <style>
-/* Layout: one screen. Scoreboard strip on top, the table fills the middle
-   (turns upright on phones), a strip of controls at the bottom. Single dark
-   look: a felt table under a lamp in a dim room. */
+/* Layout: the table takes the whole screen (upright on phones). The scoreboard
+   floats over the top edge, the status line and the shot button over the bottom
+   edge, and the rest of the controls live in a menu. When the screen has spare
+   room above and below the table (phones held upright) the floating bars sit in
+   it instead of over the table. Single dark look: a felt table under a lamp. */
 :root{
   --room:#15100c; --room-2:#241b14; --line:#43352a;
   --chalk:#f3ecd8; --muted:#b9a88d;
@@ -22,30 +24,36 @@
 html,body{height:100%}
 body{
   margin:0;background:var(--room);color:var(--chalk);font-family:var(--body);
-  display:flex;flex-direction:column;gap:8px;padding-block:10px;
-  padding-left:max(16px,env(safe-area-inset-left,0px));
-  padding-right:max(16px,env(safe-area-inset-right,0px));
   overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
 }
-.board{width:100%;max-width:640px;margin-inline:auto;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:14px}
-.team{display:flex;flex-direction:column;gap:5px;min-width:0;opacity:.5;transition:opacity .2s}
+#stage{position:fixed;inset:0;display:grid;place-items:center;
+  padding:max(4px,env(safe-area-inset-top,0px)) max(4px,env(safe-area-inset-right,0px)) max(4px,env(safe-area-inset-bottom,0px)) max(4px,env(safe-area-inset-left,0px))}
+canvas{display:block;border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.6);touch-action:none;cursor:crosshair}
+.hud{position:fixed;left:0;right:0;z-index:2;display:flex;justify-content:center;align-items:center;gap:8px;padding-inline:max(10px,env(safe-area-inset-left,0px));pointer-events:none}
+.hud.top{top:max(6px,env(safe-area-inset-top,0px))}
+.hud.bottom{bottom:max(6px,env(safe-area-inset-bottom,0px));flex-wrap:wrap}
+.hud button{pointer-events:auto}
+.glass{background:rgba(18,13,9,.78);border:1px solid rgba(243,236,216,.12);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.board{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;padding:5px 14px}
+.team{display:flex;flex-direction:column;gap:3px;min-width:0;opacity:.5;transition:opacity .2s}
 .team.on{opacity:1}
 .team.home{align-items:flex-end}
 .team.away{align-items:flex-start}
-.name{font-family:var(--display);font-size:clamp(15px,4.4vw,21px);letter-spacing:.05em;text-transform:uppercase;line-height:1;padding-bottom:4px;border-bottom:3px solid transparent}
-.home .name{color:var(--home)} .away .name{color:var(--away)}
-.home.on .name{border-color:var(--home)} .away.on .name{border-color:var(--away)}
-.pips{display:flex;gap:5px;visibility:hidden}
+.name{font-family:var(--display);font-size:14px;letter-spacing:.05em;text-transform:uppercase;line-height:1}
+.home .name{color:var(--home)} .away .name{color:#6d9cff}
+.pips{display:flex;gap:4px;visibility:hidden}
 .team.on .pips{visibility:visible}
-.pips i{width:9px;height:9px;border-radius:50%;background:var(--chalk)}
-.pips i.used{background:transparent;box-shadow:inset 0 0 0 1.5px var(--muted)}
-.score{display:flex;align-items:center;gap:8px;font-family:var(--display)}
-.score span{position:relative;min-width:1.5em;text-align:center;font-size:clamp(26px,8vw,38px);line-height:1;padding:7px 6px 6px;background:#0c0906;border:1px solid var(--line);border-radius:7px;color:var(--chalk);font-variant-numeric:tabular-nums}
-.score span::after{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(0,0,0,.7)}
-.score b{color:var(--muted);font-size:15px;font-weight:400}
-#status{margin:0;text-align:center;font-size:13px;line-height:1.35;color:var(--muted);min-height:1.35em}
-#stage{flex:1;min-height:0;position:relative;display:grid;place-items:center}
-canvas{display:block;border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.6);touch-action:none;cursor:crosshair}
+.pips i{width:6px;height:6px;border-radius:50%;background:var(--chalk)}
+.pips i.used{background:transparent;box-shadow:inset 0 0 0 1.2px var(--muted)}
+.score{display:flex;align-items:center;gap:6px;font-family:var(--display)}
+.score span{min-width:1.3em;text-align:center;font-size:22px;line-height:1;padding:4px 5px 3px;background:#0c0906;border:1px solid var(--line);border-radius:6px;color:var(--chalk);font-variant-numeric:tabular-nums}
+.score b{color:var(--muted);font-size:12px;font-weight:400}
+#bMenu{flex:none;width:40px;height:40px;padding:0;border-radius:50%;font-size:18px;display:grid;place-items:center}
+#status{margin:0;padding:8px 14px;font-size:13px;line-height:1.3;color:var(--chalk);text-align:center;max-width:min(560px,100%)}
+#status:empty{display:none}
+/* when the bars float over the table, the status line fades out after a moment */
+body.overlay #status{transition:opacity .5s;opacity:0}
+body.overlay #status.show{opacity:1}
 .banner{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
 .banner div{font-family:var(--display);font-size:clamp(44px,14vw,120px);line-height:1;color:var(--chalk);text-shadow:0 5px 0 rgba(0,0,0,.55),0 0 40px rgba(0,0,0,.5);animation:pop .55s cubic-bezier(.2,1.5,.4,1) both}
 @keyframes pop{from{transform:scale(.3) rotate(-6deg);opacity:0}to{transform:scale(1) rotate(-3deg);opacity:1}}
@@ -56,10 +64,12 @@ canvas{display:block;border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.6);to
 .card ul{text-align:left;margin:0 0 18px;padding-left:18px;display:flex;flex-direction:column;gap:9px;font-size:14px;line-height:1.45;color:var(--chalk)}
 .card ul em{font-style:normal;color:var(--home)}
 .bar{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.menu{display:flex;flex-direction:column;gap:10px;align-items:stretch}
+.menu .seg button{flex:1}
 button{font:600 13px/1 var(--body);color:var(--chalk);background:var(--room-2);border:1px solid var(--line);border-radius:9px;padding:10px 13px;cursor:pointer}
+.hud .primary{border-radius:999px;padding:11px 16px;box-shadow:0 6px 18px rgba(0,0,0,.35)}
 button:hover{border-color:var(--muted)}
 button:disabled{opacity:.6;cursor:default}
-.act{min-height:36px}
 .banner div{white-space:nowrap}
 .banner.long div{font-size:clamp(30px,8.5vw,84px)}
 button:focus-visible{outline:2px solid var(--chalk);outline-offset:2px}
@@ -72,13 +82,6 @@ button:focus-visible{outline:2px solid var(--chalk);outline-offset:2px}
 </head>
 <body>
 
-<header class="board">
-  <div class="team home on" id="tHome"><span class="name">Casa</span><span class="pips" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></div>
-  <div class="score" aria-label="Score"><span id="s0">0</span><b>×</b><span id="s1">0</span></div>
-  <div class="team away" id="tAway"><span class="name">Visitante</span><span class="pips" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></div>
-</header>
-<p id="status" aria-live="polite"></p>
-
 <main id="stage">
   <canvas id="cv" aria-label="Futebol de botão table"></canvas>
   <div class="banner" id="goal" hidden><div>GOOOL!</div></div>
@@ -87,6 +90,20 @@ button:focus-visible{outline:2px solid var(--chalk);outline-offset:2px}
       <h2 id="overTitle">Casa wins</h2>
       <p id="overSub">3 × 1</p>
       <button class="primary" id="bAgain">Play again</button>
+    </div>
+  </div>
+  <div class="panel" id="menu" hidden>
+    <div class="card">
+      <h2>Futebol de Botão</h2>
+      <div class="menu">
+        <div class="seg" role="group" aria-label="Opponent">
+          <button id="mCpu" aria-pressed="true">vs CPU</button><button id="m2p" aria-pressed="false">2 players</button>
+        </div>
+        <button id="bNew">New match</button>
+        <button id="bSnd" aria-pressed="true">Sound on</button>
+        <button id="bHelp">Rules</button>
+        <button class="primary" id="bMenuClose">Back to the game</button>
+      </div>
     </div>
   </div>
   <div class="panel" id="help" hidden>
@@ -106,22 +123,23 @@ button:focus-visible{outline:2px solid var(--chalk);outline-offset:2px}
   </div>
 </main>
 
-<div class="bar act">
-  <button class="primary" id="bDeclare" hidden>Declare shot on goal</button>
+<header class="hud top">
+  <div class="board glass">
+    <div class="team home on" id="tHome"><span class="name">Casa</span><span class="pips" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></div>
+    <div class="score" aria-label="Score"><span id="s0">0</span><b>×</b><span id="s1">0</span></div>
+    <div class="team away" id="tAway"><span class="name">Visitante</span><span class="pips" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></div>
+  </div>
+  <button class="glass" id="bMenu" aria-label="Menu" aria-expanded="false">☰</button>
+</header>
+<div class="hud bottom">
+  <p id="status" class="glass" aria-live="polite"></p>
+  <button class="primary" id="bDeclare" hidden>Declare shot</button>
   <button class="primary" id="bReady" hidden>Ready</button>
 </div>
-<footer class="bar">
-  <div class="seg" role="group" aria-label="Opponent">
-    <button id="mCpu" aria-pressed="true">vs CPU</button><button id="m2p" aria-pressed="false">2 players</button>
-  </div>
-  <button id="bNew">New match</button>
-  <button id="bSnd" aria-pressed="true">Sound on</button>
-  <button id="bHelp">Rules</button>
-</footer>
 
 <script>
 //CORE-START
-const LW=1096, LH=692, X0=22, X1=1074, Y0=22, Y1=670, CX=548, CY=346;
+const LW=1180, LH=736, X0=14, X1=1166, Y0=14, Y1=722, CX=590, CY=368;
 const GH=72, GY0=CY-GH, GY1=CY+GH, GD=56;
 const R=24, RB=11, MAXV=1450, DT=1/240;
 // goal lines and touchlines; the felt runs on past them (run-off) up to the wooden frame
@@ -149,8 +167,8 @@ const NUMS=[2,3,7,5,8,10,9];
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 
 function makeState(kick){
-  const b=[], def=[[190,270],[190,422],[300,160],[300,346],[300,532],[430,250],[430,442]],
-        att=[[190,270],[190,422],[300,170],[300,522],[380,346],[470,240],[500,346]];
+  const b=[], def=[[194,283],[194,453],[316,161],[316,368],[316,575],[459,261],[459,475]],
+        att=[[194,283],[194,453],[316,172],[316,564],[440,368],[582,292],[543,368]];
   for(let t=0;t<2;t++) (t===kick?att:def).forEach((p,i)=>{
     let x=p[0], y=p[1]; if(t===1){x=LW-x; y=LH-y}
     b.push({x,y,vx:0,vy:0,r:R,m:1,team:t,n:NUMS[i]});
@@ -437,7 +455,7 @@ function hud(){
   const live=phase!=='over';
   [$('tHome'),$('tAway')].forEach((el,t)=>{el.classList.toggle('on',live&&turn===t); el.querySelectorAll('.pips i').forEach((p,k)=>p.classList.toggle('used',turn===t&&k<touches))});
   const hk=phase==='keeper'&&!kpAt, ha=humanTurn();
-  $('bDeclare').hidden=!ha; $('bDeclare').disabled=declared; $('bDeclare').textContent=declared?'Shot declared':'Declare shot on goal';
+  $('bDeclare').hidden=!ha; $('bDeclare').disabled=declared; $('bDeclare').textContent=declared?'Shot declared':'Declare shot';
   $('bReady').hidden=!hk;
   let msg=null;
   if(phase==='over') msg='Full time.';
@@ -458,7 +476,10 @@ function hud(){
                      : who+'. You kept the ball, flick again.';
     }
   }
-  if(msg!==null) $('status').textContent=msg;
+  if(msg!==null&&msg!==$('status').textContent){
+    const st=$('status'); st.textContent=msg; st.classList.add('show');
+    clearTimeout(hud.t); hud.t=setTimeout(()=>st.classList.remove('show'),4500);
+  }
 }
 function update(dt){
   acc+=Math.min(dt,0.05);
@@ -471,7 +492,7 @@ function update(dt){
   }
   if(after&&now>=flashAt){$('goal').hidden=true; const f=after; after=null; f()}
   if(phase==='keeper'&&kpAt&&now>=kpAt) keeperDone();
-  if(phase==='aim'&&mode==='cpu'&&turn===1&&$('help').hidden){
+  if(phase==='aim'&&mode==='cpu'&&turn===1&&$('help').hidden&&$('menu').hidden){
     if(!cpuPlan&&now>=cpuAt){
       // think in slices of ~8 ms per frame so the table keeps animating
       if(!think) think=pickGen(S,1,declared,touches>=TOUCHES-1);
@@ -536,9 +557,18 @@ function buildBg(){
   drawNet(c,0); drawNet(c,1);
 }
 function resize(){
-  const w=stage.clientWidth, h=stage.clientHeight; if(w<10||h<10) return;
+  const cs=getComputedStyle(stage);
+  const w=stage.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+  const h=stage.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
+  if(w<10||h<10) return;
   portrait=h>w*1.05;
-  scale=portrait?Math.min(w/LH,h/LW):Math.min(w/LW,h/LH);
+  const fit=hh=>portrait?Math.min(w/LH,hh/LW):Math.min(w/LW,hh/LH);
+  // keep the floating bars off the table when that costs little (phones held upright);
+  // otherwise use the whole screen and let them float over the frame and run-off
+  const TOP=58, BOT=104, full=fit(h), room=fit(h-TOP-BOT), keep=room>=full*0.94;
+  scale=keep?room:full;
+  cv.style.margin=keep?TOP+'px 0 '+BOT+'px':'0';
+  document.body.classList.toggle('overlay',!keep);
   dpr=Math.min(window.devicePixelRatio||1,2.5);
   const cw=Math.floor((portrait?LH:LW)*scale), ch=Math.floor((portrait?LW:LH)*scale);
   cv.style.width=cw+'px'; cv.style.height=ch+'px';
@@ -693,16 +723,19 @@ function setSound(on){
 }
 $('mCpu').onclick=()=>{audio();setMode('cpu')};
 $('m2p').onclick=()=>{audio();setMode('2p')};
-$('bNew').onclick=()=>{audio();newMatch()};
+$('bNew').onclick=()=>{audio();showMenu(false);newMatch()};
 $('bAgain').onclick=()=>{audio();newMatch()};
 $('bSnd').onclick=()=>{setSound(!sound); if(sound) audio()};
 $('bDeclare').onclick=()=>{audio(); if(humanTurn()&&!declared) startKeeper()};
 $('bReady').onclick=()=>{if(phase==='keeper'&&!kpAt) keeperDone()};
-$('bHelp').onclick=()=>{$('help').hidden=false};
+function showMenu(on){$('menu').hidden=!on; $('bMenu').setAttribute('aria-expanded',on)}
+$('bMenu').onclick=()=>{audio(); showMenu($('menu').hidden)};
+$('bMenuClose').onclick=()=>showMenu(false);
+$('bHelp').onclick=()=>{showMenu(false); $('help').hidden=false};
 $('bHelpClose').onclick=()=>{$('help').hidden=true};
-$('help').addEventListener('click',e=>{if(e.target===$('help')) $('help').hidden=true});
+for(const id of ['help','menu']) $(id).addEventListener('click',e=>{if(e.target===$(id)){$(id).hidden=true; showMenu(!$('menu').hidden)}});
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){$('help').hidden=true; if(drag){drag=null}}
+  if(e.key==='Escape'){$('help').hidden=true; showMenu(false); if(drag){drag=null}}
 });
 
 function start(data){
