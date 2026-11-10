@@ -72,9 +72,9 @@ button:focus-visible{outline:2px solid var(--chalk);outline-offset:2px}
 <body>
 
 <header class="board">
-  <div class="team home on" id="tHome"><span class="name">Casa</span></div>
+  <div class="team home on" id="tHome"><span class="name">Casa</span><span class="pips" aria-hidden="true"><i></i><i></i><i></i></span></div>
   <div class="score" aria-label="Score"><span id="s0">0</span><b>×</b><span id="s1">0</span></div>
-  <div class="team away" id="tAway"><span class="name">Visitante</span></div>
+  <div class="team away" id="tAway"><span class="name">Visitante</span><span class="pips" aria-hidden="true"><i></i><i></i><i></i></span></div>
 </header>
 <p id="status" aria-live="polite"></p>
 
@@ -93,7 +93,7 @@ button:focus-visible{outline:2px solid var(--chalk);outline-offset:2px}
       <h2>How to play</h2>
       <ul>
         <li>Pull back from one of your buttons and let go to flick it. The further you pull, the harder it goes.</li>
-        <li><em>Possession:</em> you keep playing as long as your team was the last to touch the ball. If you miss it, or it last touched an opponent, the turn passes.</li>
+        <li><em>Possession:</em> you keep playing as long as your team was the last to touch the ball, up to 3 flicks (the dots under your name). If you miss it, it last touched an opponent, or your 3 touches are used, the turn passes.</li>
         <li><em>Falta:</em> hit an opposing button before your button reaches the ball and it is a foul. The fouled button gets a free kick with the ball at its feet and the fouling team pushed back.</li>
         <li><em>Shots:</em> press Declare shot on goal before shooting. The other side then places and tilts its goalkeeper. A goal from an undeclared shot does not count and gives a goal kick. Own goals always count.</li>
         <li><em>Goalkeeper kick:</em> when the ball rests in your own small area on your turn, you may pull back from the ball itself and send it upfield without using a button.</li>
@@ -236,12 +236,16 @@ function simulate(s,i,ax,ay,p,team){
   return c;
 }
 // CPU: try a spread of flicks in the simulator and keep the best outcome.
-function pick(s,team,declared){
+// A generator that yields after every simulated flick, so the page can spread
+// the search over several frames; pick() runs it to the end in one go.
+function pick(s,team,declared,last){const g=pickGen(s,team,declared,last); let r; do r=g.next(); while(!r.done); return r.value}
+function* pickGen(s,team,declared,lastTouch){
   const ball=s.b[s.b.length-1], gx=team===1?GL0:GL1;
   let best=null, bestSc=-1e9, canScore=false;
   const ownBall=inArea(s,team);
-  s.b.forEach((b,i)=>{
-    if(b.team<0){if(!ownBall) return}else if(b.team!==team) return;
+  for(let i=0;i<s.b.length;i++){
+    const b=s.b[i];
+    if(b.team<0){if(!ownBall) continue}else if(b.team!==team) continue;
     const dirs=[];
     if(b.team<0){
       const base=Math.atan2(CY-b.y,gx-b.x);
@@ -262,13 +266,14 @@ function pick(s,team,declared){
       else if(r.goal>=0) sc=-1000;
       else{
         sc=100-Math.hypot(gx+(team===1?40:-40)-fb.x,CY-fb.y)/10;
-        if(r.last===team){
+        if(r.last===team&&!lastTouch){
           sc+=25; let nd=1e9; for(const o of r.b) if(o.team===team) nd=Math.min(nd,Math.hypot(o.x-fb.x,o.y-fb.y)); sc-=nd*0.04;
-        }else sc-=r.touched?15:45;
+        }else if(!lastTouch) sc-=r.touched?15:45;
       }
       if(sc>bestSc){bestSc=sc;best={i,ax:d[0],ay:d[1],p}}
+      yield;
     }
-  });
+  }
   if(best) best.canScore=canScore;
   return best;
 }
@@ -277,7 +282,7 @@ function pick(s,team,declared){
 (function(){
 const $=id=>document.getElementById(id);
 const cv=$('cv'), ctx=cv.getContext('2d'), bg=document.createElement('canvas'), stage=$('stage');
-const NAMES=['Casa','Visitante'], TARGET=3, MAXDRAG=170;
+const NAMES=['Casa','Visitante'], TARGET=3, MAXDRAG=170, TOUCHES=3;
 const KIT=[
   {base:'#f5b81c',lite:'#ffd866',dark:'#a86f05',inner:'#fff5d6',text:'#3a2703'},
   {base:'#3d7bef',lite:'#7ea9ff',dark:'#173a8c',inner:'#eef4ff',text:'#10244f'}
@@ -285,7 +290,7 @@ const KIT=[
 let S, score=[0,0], turn=0, touches=0, phase='aim', mode='cpu', lastScorer=0;
 let scale=1, dpr=1, portrait=false, drag=null, cpuPlan=null, cpuAt=0, goalAt=0, now=0, acc=0, last=0;
 let sound=true, ac=null, lastTick=0;
-let declared=false, kpAt=0, kdrag=null, after=null, flashAt=0, note='';
+let think=null, noteAt=0, declared=false, kpAt=0, kdrag=null, after=null, flashAt=0, note='';
 
 try{const m=localStorage.getItem('fdb-mode'); if(m==='2p'||m==='cpu') mode=m; if(localStorage.getItem('fdb-sound')==='0') sound=false}catch(e){}
 
@@ -311,7 +316,7 @@ function whistle(){
 
 /* ---------- match flow ---------- */
 const humanTurn=()=>phase==='aim'&&(mode==='2p'||turn===0);
-function kickoff(k){S=makeState(k); turn=k; touches=0; declared=false; phase='aim'; cpuPlan=null; drag=null; kdrag=null; cpuAt=now+850; hud()}
+function kickoff(k){think=null; S=makeState(k); turn=k; touches=0; declared=false; phase='aim'; cpuPlan=null; drag=null; kdrag=null; cpuAt=now+850; hud()}
 function newMatch(){score=[0,0]; after=null; $('over').hidden=true; $('goal').hidden=true; kickoff(0)}
 function flash(text,ms,fn){const g=$('goal'); g.firstElementChild.textContent=text; g.hidden=true; void g.offsetWidth; g.hidden=false; flashAt=now+ms; after=fn}
 function launch(i,ax,ay,p){
@@ -322,6 +327,7 @@ function endFlick(){
   const foul=S.foul; S.shooter=-1; declared=false;
   if(foul>=0){phase='wait'; note='Foul on '+NAMES[S.b[foul].team]+'. Free kick.'; flash('FALTA!',1300,()=>freeKick(foul)); hud(); return}
   if(S.last!==turn){turn=1-turn; touches=0}
+  else if(touches>=TOUCHES){turn=1-turn; touches=0; note='3 touches used. Ball to '+NAMES[turn]+'.'; noteAt=now+2600}
   phase='aim'; cpuAt=now+700; hud();
 }
 function onGoal(){
@@ -359,7 +365,7 @@ function settle(ball,fixed,clearTeam,clearR){
   }
   S.goal=-1; S.foul=-1; S.last=-1; S.touched=false; S.shooter=-1;
 }
-function restart(t){turn=t; touches=0; declared=false; phase='aim'; cpuPlan=null; drag=null; cpuAt=now+800; hud()}
+function restart(t){think=null; turn=t; touches=0; declared=false; phase='aim'; cpuPlan=null; drag=null; cpuAt=now+800; hud()}
 function freeKick(fi){
   const f=S.b[fi], t=f.team, ball=S.b[S.b.length-1], gap=R+RB+5;
   // ball at the fouled button's feet, on the line to the centre of the opposing goal
@@ -392,7 +398,7 @@ function tilt(da){if(phase!=='keeper'||kpAt) return; const t=1-turn, k=S.keep[t]
 function hud(){
   $('s0').textContent=score[0]; $('s1').textContent=score[1];
   const live=phase!=='over';
-  [$('tHome'),$('tAway')].forEach((el,t)=>el.classList.toggle('on',live&&turn===t));
+  [$('tHome'),$('tAway')].forEach((el,t)=>{el.classList.toggle('on',live&&turn===t); el.querySelectorAll('.pips i').forEach((p,k)=>p.classList.toggle('used',turn===t&&k<touches))});
   const hk=phase==='keeper'&&!kpAt, ha=humanTurn();
   $('bDeclare').hidden=!ha; $('bDeclare').disabled=declared; $('bDeclare').textContent=declared?'Shot declared':'Declare shot on goal';
   $('bTiltL').hidden=$('bTiltR').hidden=$('bReady').hidden=!hk;
@@ -405,11 +411,12 @@ function hud(){
             :NAMES[turn]+' declared a shot. '+(mode==='2p'?NAMES[d]+': drag':'Drag')+' to move your goalkeeper, tilt it, then press Ready.';
   }
   else if(phase==='aim'){
-    if(mode==='cpu'&&turn===1) msg='Visitante is lining up a flick.';
+    if(mode==='cpu'&&turn===1) msg=(now<noteAt?note+' ':'')+'Visitante is lining up a flick.';
     else{
-      const who=mode==='cpu'?'Your turn':NAMES[turn]+' to play';
+      const who=(now<noteAt?note+' ':'')+(mode==='cpu'?'Your turn':NAMES[turn]+' to play');
       msg=declared? who+'. Shot declared, take it.'
          :inArea(S,turn)? who+'. Ball in your area: flick a button, or pull back from the ball itself for a goalkeeper kick.'
+         :touches===TOUCHES-1? who+'. Last touch: shoot or pass.'
          :touches===0? who+'. Pull back from a '+(turn?'blue':'yellow')+' button and let go.'
                      : who+'. You kept the ball, flick again.';
     }
@@ -427,9 +434,14 @@ function update(dt){
   }
   if(after&&now>=flashAt){$('goal').hidden=true; const f=after; after=null; f()}
   if(phase==='keeper'&&kpAt&&now>=kpAt) keeperDone();
-  if(phase==='aim'&&mode==='cpu'&&turn===1){
+  if(phase==='aim'&&mode==='cpu'&&turn===1&&$('help').hidden){
     if(!cpuPlan&&now>=cpuAt){
-      const p=pick(S,1,declared);
+      // think in slices of ~8 ms per frame so the table keeps animating
+      if(!think) think=pickGen(S,1,declared,touches>=TOUCHES-1);
+      const t0=performance.now(); let r;
+      do r=think.next(); while(!r.done&&performance.now()-t0<8);
+      if(!r.done) return;
+      think=null; const p=r.value;
       if(p&&p.canScore&&!declared) startKeeper();
       else if(p){
         const a=Math.atan2(p.ay,p.ax)+(Math.random()-0.5)*0.05;
@@ -617,7 +629,7 @@ cv.addEventListener('contextmenu',e=>e.preventDefault());
 
 function setMode(m){
   mode=m; $('mCpu').setAttribute('aria-pressed',m==='cpu'); $('m2p').setAttribute('aria-pressed',m==='2p');
-  cpuPlan=null; cpuAt=now+600; try{localStorage.setItem('fdb-mode',m)}catch(e){}
+  cpuPlan=null; think=null; cpuAt=now+600; try{localStorage.setItem('fdb-mode',m)}catch(e){}
   if(phase==='keeper'){if(m==='cpu'&&turn===0){autoKeeper(1);kpAt=now+600}else kpAt=0}
   hud();
 }
@@ -637,6 +649,9 @@ $('bReady').onclick=()=>{if(phase==='keeper'&&!kpAt) keeperDone()};
 $('bHelp').onclick=()=>{$('help').hidden=false};
 $('bHelpClose').onclick=()=>{$('help').hidden=true};
 $('help').addEventListener('click',e=>{if(e.target===$('help')) $('help').hidden=true});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){$('help').hidden=true; if(drag){drag=null}}
+});
 
 function start(data){
   if(data&&data.mode) mode=data.mode==='2p'?'2p':'cpu';
