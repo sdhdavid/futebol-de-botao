@@ -271,40 +271,99 @@ function simulate(s,i,ax,ay,p,team){
 // A generator that yields after every simulated flick, so the page can spread
 // the search over several frames; pick() runs it to the end in one go.
 function pick(s,team,declared,last){const g=pickGen(s,team,declared,last); let r; do r=g.next(); while(!r.done); return r.value}
+// distance from a point to a segment
+function segDist(px,py,ax,ay,bx,by){
+  const dx=bx-ax, dy=by-ay, l=dx*dx+dy*dy||1; let t=((px-ax)*dx+(py-ay)*dy)/l; t=t<0?0:t>1?1:t;
+  return Math.hypot(px-ax-dx*t,py-ay-dy*t);
+}
+// how open the straight line from the ball to the goal at gx is, past the buttons of team def (0..1)
+function lane(s,fb,gx,def){
+  let open=1; for(const o of s.b) if(o.team===def&&segDist(o.x,o.y,fb.x,fb.y,gx,CY)<R+RB) open-=0.5;
+  return open<0?0:open;
+}
+// how well team t could play the ball towards the goal at gx on its next flick (0..1):
+// a button close behind the ball, lined up with the goal
+function support(s,fb,gx,t){
+  const gd=Math.hypot(gx-fb.x,CY-fb.y)||1; let best=0;
+  for(let k=0;k<s.b.length;k++){
+    const o=s.b[k]; if(o.team!==t||k===s.taker) continue;
+    const d=Math.hypot(fb.x-o.x,fb.y-o.y)||1, c=((fb.x-o.x)*(gx-fb.x)+(fb.y-o.y)*(CY-fb.y))/(d*gd);
+    const q=(c>0?c:0)*clamp(1.15-d/380,0,1); if(q>best) best=q;
+  }
+  return best;
+}
+// index of the first disc a flick of disc i along (ax,ay) would meet, or -1
+function firstHit(s,i,ax,ay){
+  const b=s.b[i]; let bt=1e9, hit=-1;
+  for(let j=0;j<s.b.length;j++){
+    if(j===i) continue; const o=s.b[j], ox=o.x-b.x, oy=o.y-b.y, t=ox*ax+oy*ay; if(t<=0) continue;
+    const rr=b.r+o.r, pp=ox*ox+oy*oy-t*t; if(pp>=rr*rr) continue;
+    const th=t-Math.sqrt(rr*rr-pp); if(th<bt){bt=th;hit=j}
+  }
+  return hit;
+}
+// value of a resting position for `team` (higher is better)
+function evalRest(r,team,lastTouch){
+  const fb=r.b[r.b.length-1], gx=team===1?GL0:GL1, ox=team===1?GL1:GL0, opp=1-team;
+  const dAtt=Math.hypot(gx-fb.x,CY-fb.y), mine=team===1?fb.x<CX:fb.x>CX;
+  let sc=100-dAtt/10;
+  if(r.last===team&&!lastTouch){
+    // we keep the ball: reward a button ready behind it and, in their half, an open line to goal
+    const q=support(r,fb,gx,team);
+    sc+=25+q*30+(mine?q*25*lane(r,fb,gx,opp):0);
+  }else{
+    // they get the ball: how dangerous is it for us?
+    if(!lastTouch) sc-=r.touched?15:45;
+    const q=support(r,fb,ox,opp);
+    sc-=q*(mine?12:25+35*lane(r,fb,ox,team));
+  }
+  return sc;
+}
+// CPU: try a spread of flicks in the simulator and keep the best outcome.
 function* pickGen(s,team,declared,lastTouch){
-  const ball=s.b[s.b.length-1], gx=team===1?GL0:GL1;
+  const n=s.b.length-1, ball=s.b[n], gx=team===1?GL0:GL1;
   let best=null, bestSc=-1e9, canScore=false;
-  const ownBall=inArea(s,team);
-  for(let i=0;i<s.b.length;i++){
+  const ownBall=inArea(s,team), near=Math.hypot(gx-ball.x,CY-ball.y)<560;
+  const gAng=Math.atan2(CY-ball.y,gx-ball.x);
+  // directions we may want the ball to travel in: at the goal mouth, and fanned out for passes and wing play
+  const want=[];
+  for(const ty of (declared?[0,-15,15,-30,30,-44,44,-56,56]:near?[0,-28,28,-52,52]:[0,-45,45])){let dx=gx-ball.x, dy=CY+ty-ball.y; const l=Math.hypot(dx,dy)||1; want.push([dx/l,dy/l])}
+  for(const o of [-1.1,-0.6,-0.3,0.3,0.6,1.1]) want.push([Math.cos(gAng+o),Math.sin(gAng+o)]);
+  for(let i=0;i<=n;i++){
     const b=s.b[i];
     if(b.team<0){if(!ownBall) continue}else if(b.team!==team||i===s.taker) continue;
     const dirs=[];
     if(b.team<0){
-      const base=Math.atan2(CY-b.y,gx-b.x);
-      for(const o of [-0.7,-0.35,0,0.35,0.7]) dirs.push([Math.cos(base+o),Math.sin(base+o)]);
+      for(const o of [-0.9,-0.6,-0.3,0,0.3,0.6,0.9]) dirs.push([Math.cos(gAng+o),Math.sin(gAng+o)]);
     }else{
-    for(const ty of [CY,CY-48,CY+48]){
-      let dx=gx-ball.x, dy=ty-ball.y; const l=Math.hypot(dx,dy)||1; dx/=l; dy/=l;
-      let ax=ball.x-dx*(R+RB-1)-b.x, ay=ball.y-dy*(R+RB-1)-b.y; const al=Math.hypot(ax,ay)||1; ax/=al; ay/=al;
-      if(ax*dx+ay*dy>0.15) dirs.push([ax,ay]);
+      const add=(ax,ay)=>{
+        for(const d of dirs) if(d[0]*ax+d[1]*ay>0.9995) return;
+        if(firstHit(s,i,ax,ay)===n) dirs.push([ax,ay]); // skip lines blocked by another button
+      };
+      for(const w of want){
+        let ax=ball.x-w[0]*(R+RB-1)-b.x, ay=ball.y-w[1]*(R+RB-1)-b.y; const al=Math.hypot(ax,ay)||1; ax/=al; ay/=al;
+        if(ax*w[0]+ay*w[1]>0.2) add(ax,ay);
+      }
+      {let ax=ball.x-b.x, ay=ball.y-b.y; const al=Math.hypot(ax,ay)||1; add(ax/al,ay/al)}
     }
-    {let ax=ball.x-b.x, ay=ball.y-b.y; const al=Math.hypot(ax,ay)||1; dirs.push([ax/al,ay/al])}
-    }
-    for(const d of dirs) for(const p of [0.42,0.68,1]){
-      const r=simulate(s,i,d[0],d[1],p,team), fb=r.b[r.b.length-1];
+    for(const d of dirs) for(const p of [0.3,0.5,0.75,1]){
+      const r=simulate(s,i,d[0],d[1],p,team);
       let sc;
       if(r.foul>=0) sc=-300;
-      else if(r.goal===team){canScore=true; sc=declared?1000-p*10:-150}
+      else if(r.goal===team){
+        canScore=true;
+        if(!declared) sc=-150;
+        else{
+          // prefer shots that still go in when the flick is a little off
+          sc=1000-p*10; const a=Math.atan2(d[1],d[0]);
+          for(const e of [-0.022,0.022]){const t=simulate(s,i,Math.cos(a+e),Math.sin(a+e),p,team); if(t.goal===team&&t.foul<0) sc+=300; yield}
+        }
+      }
       else if(r.goal>=0) sc=-1000;
       else if(r.out){
         const a=outAward(r.out,r.last<0?team:r.last);
-        sc=a.t===team?(a.k==='corner'?70:30):(a.k==='corner'?-150:-70);
-      }else{
-        sc=100-Math.hypot(gx+(team===1?40:-40)-fb.x,CY-fb.y)/10;
-        if(r.last===team&&!lastTouch){
-          sc+=25; let nd=1e9; for(const o of r.b) if(o.team===team) nd=Math.min(nd,Math.hypot(o.x-fb.x,o.y-fb.y)); sc-=nd*0.04;
-        }else if(!lastTouch) sc-=r.touched?15:45;
-      }
+        sc=a.t===team?(a.k==='corner'?75:a.k==='throw'?35:20):(a.k==='corner'?-150:-70);
+      }else sc=evalRest(r,team,lastTouch);
       if(sc>bestSc){bestSc=sc;best={i,ax:d[0],ay:d[1],p}}
       yield;
     }
@@ -439,7 +498,8 @@ function autoKeeper(t){
   const ball=S.b[S.b.length-1], gx=t===0?GL0:GL1;
   let ux=ball.x-gx, uy=ball.y-CY; const l=Math.hypot(ux,uy)||1; ux/=l; uy/=l;
   const a=Math.abs(ux)<0.01?1.05*Math.sign(uy||1):Math.atan(uy/ux);
-  for(const d of [44,34,24]) if(tryKeeper(t,{x:gx+ux*d,y:CY+uy*d,a})) return;
+  // as far out as allowed: the closer to the ball, the more of the goal it covers
+  for(const d of [70,58,44,34,24]) if(tryKeeper(t,{x:gx+ux*d,y:CY+uy*d,a})) return;
   for(const d of [44,30]) if(tryKeeper(t,{x:gx+ux*d,y:CY+uy*d,a:0})) return;
 }
 function startKeeper(){
