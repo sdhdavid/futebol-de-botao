@@ -114,7 +114,7 @@ button:focus-visible{outline:2px solid var(--chalk);outline-offset:2px}
         <li><em>Possession:</em> you keep playing as long as your team was the last to touch the ball, up to 5 flicks (the dots under your name). If you miss it, it last touched an opponent, or your 5 touches are used, the turn passes.</li>
         <li><em>Falta:</em> hit an opposing button before your button reaches the ball and it is a foul. The fouled button gets a free kick with the ball at its feet and the fouling team pushed back.</li>
         <li><em>Out of play:</em> the felt runs on past the white lines, so buttons can go there to reach the ball. Once the ball is fully over a line it is out: over a touchline, a throw-in (lateral) to the other team; over a goal line, a corner (escanteio) if the defending team touched it last, otherwise a goal kick (tiro de meta). For the restart, your nearest button steps up behind the ball. As in football, the button that takes a throw-in or corner may not play the ball again until another button has touched it.</li>
-        <li><em>Shots:</em> press Declare shot on goal before shooting. The other side then drags its goalkeeper into place and turns it with the round handle (or the mouse wheel). A goal from an undeclared shot does not count and gives a goal kick. Own goals always count.</li>
+        <li><em>Shots:</em> once the ball is in the opponent's half, the Declare shot button appears: press it before shooting. The other side then drags its goalkeeper into place and turns it with the round handle (or the mouse wheel). A goal from an undeclared shot does not count and gives a goal kick. Own goals always count.</li>
         <li><em>Goalkeeper kick:</em> on a goal kick, or whenever the ball rests in your own small area on your turn, you may pull back from the ball itself and send it upfield without using a button.</li>
         <li>First to 3 goals wins. The team that concedes takes the next kick-off.</li>
       </ul>
@@ -256,6 +256,8 @@ function outAward(o,last){
   if(o.k==='side') return {t:1-last,k:'throw'};
   return last===o.t?{t:1-o.t,k:'corner'}:{t:o.t,k:'goalkick'};
 }
+// a shot may only be declared once the ball is in the opponent's half
+function canDeclare(s,team){const b=s.b[s.b.length-1]; return team===0?b.x>CX:b.x<CX}
 // is the ball resting inside this team's own small area?
 function inArea(s,team){const b=s.b[s.b.length-1]; return Math.abs(b.y-CY)<105&&(team===0?b.x<GL0+56:b.x>GL1-56)}
 function simulate(s,i,ax,ay,p,team){
@@ -456,7 +458,7 @@ function hud(){
   const live=phase!=='over';
   [$('tHome'),$('tAway')].forEach((el,t)=>{el.classList.toggle('on',live&&turn===t); el.querySelectorAll('.pips i').forEach((p,k)=>p.classList.toggle('used',turn===t&&k<touches))});
   const hk=phase==='keeper'&&!kpAt, ha=humanTurn();
-  $('bDeclare').hidden=!ha; $('bDeclare').disabled=declared; $('bDeclare').textContent=declared?'Shot declared':'Declare shot';
+  $('bDeclare').hidden=!ha||(!declared&&!canDeclare(S,turn)); $('bDeclare').disabled=declared; $('bDeclare').textContent=declared?'Shot declared':'Declare shot';
   $('bReady').hidden=!hk;
   let msg=null;
   if(phase==='over') msg='Full time.';
@@ -502,7 +504,7 @@ function update(dt){
       do r=think.next(); while(!r.done&&performance.now()-t0<8);
       if(!r.done) return;
       think=null; const p=r.value;
-      if(p&&p.canScore&&!declared) startKeeper();
+      if(p&&p.canScore&&!declared&&canDeclare(S,1)) startKeeper();
       else if(p){
         const a=Math.atan2(p.ay,p.ax)+(Math.random()-0.5)*0.05;
         cpuPlan={i:p.i,ax:Math.cos(a),ay:Math.sin(a),p:clamp(p.p*(1+(Math.random()-0.5)*0.1),0.2,1),t0:now};
@@ -728,7 +730,7 @@ $('m2p').onclick=()=>{audio();setMode('2p')};
 $('bNew').onclick=()=>{audio();showMenu(false);newMatch()};
 $('bAgain').onclick=()=>{audio();newMatch()};
 $('bSnd').onclick=()=>{setSound(!sound); if(sound) audio()};
-$('bDeclare').onclick=()=>{audio(); if(humanTurn()&&!declared) startKeeper()};
+$('bDeclare').onclick=()=>{audio(); if(humanTurn()&&!declared&&canDeclare(S,turn)) startKeeper()};
 $('bReady').onclick=()=>{if(phase==='keeper'&&!kpAt) keeperDone()};
 function showMenu(on){$('menu').hidden=!on; $('bMenu').setAttribute('aria-expanded',on)}
 $('bMenu').onclick=()=>{audio(); showMenu($('menu').hidden)};
