@@ -10,7 +10,7 @@ A top-down button football (futebol de botão) table you play in the browser. On
 - Declared shots: press "Declare shot" before shooting. A shot can only be declared while the ball is in the opponent's half (the button is hidden otherwise). The defending side's goalkeeper is pre-placed facing the ball; it can be dragged anywhere in its zone and turned with a round handle (or the mouse wheel) before pressing Ready. A goal from an undeclared shot is void and gives a goal kick. Own goals always count.
 - Out of play: the felt runs 64 units past the touchlines as run-off, so buttons can chase the ball there. A ball fully over a touchline is a throw-in (lateral) to the team that did not touch it last; over a goal line it is a corner (escanteio) if the defenders touched it last, otherwise a goal kick (tiro de meta). For a throw-in or corner the kicking team's nearest button steps up behind the ball in the run-off. The button that takes a throw-in or corner cannot be flicked again until something else has touched the ball (football's double-touch rule).
 - Goalkeeper kick: on a goal kick (ball on the edge of the small area), or whenever the ball rests in your own small area on your turn, you may flick the ball itself.
-- 8 per side (7 buttons and a goalkeeper). At kick-off the striker has a partner beside the ball on the halfway line and a midfielder behind for a back pass. First to 3 goals. Modes: vs CPU, or 2 players on one device.
+- 8 per side (7 buttons and a goalkeeper). At kick-off two buttons stand side by side just behind the ball, one on each side of it, with a midfielder behind them for a back pass. First to 3 goals. Modes: vs CPU, or 2 players on one device.
 
 ## Online play
 
