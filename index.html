@@ -128,6 +128,16 @@ button:focus-visible{outline:2px solid var(--chalk);outline-offset:2px}
       </div>
     </div>
   </div>
+  <div class="panel" id="away" hidden>
+    <div class="card">
+      <h2 id="awayTitle">Opponent disconnected</h2>
+      <p id="awayMsg"></p>
+      <div class="menu">
+        <button class="primary" id="bAwayWait">Wait for them</button>
+        <button id="bAwayLeave">Leave the online game</button>
+      </div>
+    </div>
+  </div>
   <div class="panel" id="help" hidden>
     <div class="card">
       <h2>How to play</h2>
@@ -575,7 +585,9 @@ function hud(){
   $('bDeclare').hidden=!ha||(!declared&&!canDeclare(S,turn)); $('bDeclare').disabled=declared; $('bDeclare').textContent=declared?'Shot declared':'Declare shot';
   $('bReady').hidden=!hk;
   let msg=null;
+  const away=mode==='net'&&!linked&&everLinked;
   if(phase==='over') msg='Full time.';
+  else if(away) msg=gone==='left'?'Your opponent left the game. Waiting for them to come back.':'Your opponent is disconnected. Waiting for them to come back.';
   else if(phase==='wait') msg=note;
   else if(phase==='keeper'){
     const d=1-turn;
@@ -584,7 +596,7 @@ function hud(){
   }
   else if(phase==='aim'){
     if(mode==='cpu'&&turn===1) msg=(now<noteAt?note+' ':'')+'Visitante is lining up a flick.';
-    else if(mode==='net'&&!linked) msg=everLinked?'Your opponent is disconnected. Waiting for them to come back.':'Waiting for your opponent to join.';
+    else if(mode==='net'&&!linked) msg='Waiting for your opponent to join.';
     else if(mode==='net'&&turn!==myTeam) msg=(now<noteAt?note+' ':'')+"Opponent's turn.";
     else{
       const who=(now<noteAt?note+' ':'')+(mode!=='2p'?'Your turn':NAMES[turn]+' to play');
@@ -598,7 +610,7 @@ function hud(){
   }
   if(msg!==null&&msg!==$('status').textContent){
     const st=$('status'); st.textContent=msg; st.classList.add('show');
-    clearTimeout(hud.t); hud.t=setTimeout(()=>st.classList.remove('show'),4500);
+    clearTimeout(hud.t); if(!away) hud.t=setTimeout(()=>st.classList.remove('show'),4500);
   }
 }
 function update(dt){
@@ -876,9 +888,9 @@ document.addEventListener('keydown',e=>{
    flicked sends the resulting position (a snapshot) and the other adopts it, so
    small numeric differences between devices can never build up. `seq` counts
    snapshots: after a reconnect the side with the higher count is the one to trust. */
-const VERSION='0.9.0', BUILD='2026-11-12';
+const VERSION='0.9.1', BUILD='2026-11-12';
 const PEERJS=['https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'];
-let net=null, netCode='', myTeam=0, linked=false, everLinked=false, needSync=false, awaitSync=false, helloDue=false, seq=0, inbox=[], lastRx=0, flip=false;
+let net=null, netCode='', myTeam=0, linked=false, everLinked=false, needSync=false, awaitSync=false, helloDue=false, seq=0, inbox=[], lastRx=0, flip=false, gone='';
 function netSend(m){if(net&&linked) try{net.send(m)}catch(e){}}
 function snap(){
   return {seq,b:S.b.map(o=>[o.x,o.y]),keep:S.keep.map(k=>({x:k.x,y:k.y,a:k.a})),score:score.slice(),turn,touches,
@@ -896,7 +908,7 @@ function applySnap(s){
 // runs every frame: send what is due, and take incoming messages once our own table is at rest
 function pump(){
   if(mode!=='net') return;
-  if(linked&&performance.now()-lastRx>10000){linked=false; drag=null; hud()}
+  if(linked&&performance.now()-lastRx>7000) linkDown('lost'); // no heartbeat: the other side is gone
   const rest=phase==='aim'||phase==='over';
   if(needSync&&rest){needSync=false; seq++; netSend({t:'sync',s:snap()}); hud()}
   if(helloDue&&rest&&linked){helloDue=false; netSend({t:'hello',v:VERSION,s:snap()})}
@@ -916,14 +928,27 @@ function pump(){
 }
 function netNew(){if(mode==='net'){netSend({t:'new'}); seq=0; needSync=awaitSync=false} newMatch()}
 function linkUp(){
-  linked=true; everLinked=true; helloDue=true; lastRx=performance.now();
+  linked=true; everLinked=true; helloDue=true; lastRx=performance.now(); gone=''; $('away').hidden=true;
   if(phase==='keeper'){phase='aim'; declared=false; kpAt=0; kdrag=null} // a placement may have been lost with the old connection
   $('net').hidden=true; netUI(); hud();
 }
+// the other player went away: 'left' = they chose to leave or closed the page, 'lost' = the connection dropped
+function linkDown(why){
+  if(!linked) return;
+  linked=false; gone=why; drag=null; kdrag=null;
+  $('awayTitle').textContent=why==='left'?'Your opponent left':'Opponent disconnected';
+  $('awayMsg').textContent=why==='left'?'They closed the game. If they open the invite link again, the match carries on from here.'
+    :'The connection to your opponent was lost. The match carries on from here if they come back.';
+  $('away').hidden=false; hud();
+}
 function setFlip(f){if(flip===f) return; flip=f; document.body.classList.toggle('flip',f); resize()}
 function netStop(){
-  if(net){try{net.close()}catch(e){} net=null}
-  linked=everLinked=false; netCode=''; inbox=[]; needSync=awaitSync=helloDue=false; setFlip(false);
+  if(net){
+    // tell the other side we are leaving, and give the message a moment to go out
+    const n=net; net=null; if(linked) try{n.send({t:'bye'})}catch(e){}
+    setTimeout(()=>{try{n.close()}catch(e){}},400);
+  }
+  linked=everLinked=false; gone=''; $('away').hidden=true; netCode=''; inbox=[]; needSync=awaitSync=helloDue=false; setFlip(false);
   try{sessionStorage.removeItem('fdb-host')}catch(e){}
   netUI();
 }
@@ -935,8 +960,11 @@ function netStart(code,host,resume){
   net=transport(code,host,{
     ready(){netUI()},
     open(){linkUp()},
-    msg(m){lastRx=performance.now(); if(!linked) linkUp(); if(m&&m.t&&m.t!=='ping') inbox.push(m)},
-    close(){linked=false; drag=null; hud()},
+    msg(m){
+      if(m&&m.t==='bye'){linkDown('left'); return}
+      lastRx=performance.now(); if(!linked) linkUp(); if(m&&m.t&&m.t!=='ping') inbox.push(m);
+    },
+    close(){linkDown('lost')},
     fail(why){
       if(why==='taken'){ // the code is in use: after a reload it is our own old room, still closing
         if(resume&&retry++<6){const n=net; setTimeout(()=>{if(net===n) netStart(code,true,true)},2500)}
@@ -1023,7 +1051,9 @@ $('bNetClose').onclick=()=>{$('net').hidden=true};
 $('bHost').onclick=()=>{audio(); netStart(newCode(),true)};
 $('bJoin').onclick=()=>{audio(); const c=$('inCode').value.trim().toUpperCase(); if(/^[A-Z0-9]{5}$/.test(c)) netStart(c,false); else $('netMsg').textContent='A room code has 5 letters or digits.'};
 $('inCode').addEventListener('keydown',e=>{if(e.key==='Enter') $('bJoin').click()});
-$('bLeave').onclick=()=>{setMode('cpu'); newMatch(); netUI()};
+$('bLeave').onclick=$('bAwayLeave').onclick=()=>{setMode('cpu'); newMatch(); netUI(); $('net').hidden=true};
+$('bAwayWait').onclick=()=>{$('away').hidden=true};
+window.addEventListener('pagehide',()=>netSend({t:'bye'}));
 $('bCopy').onclick=async()=>{
   const url=inviteLink(), b=$('bCopy');
   try{if(navigator.share){await navigator.share({title:'Futebol de Botão',text:'Play me at futebol de botão',url}); return}}catch(e){if(e&&e.name==='AbortError') return}

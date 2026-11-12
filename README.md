@@ -18,6 +18,7 @@ Menu, then "Play online". One player creates a room and sends the invite link (o
 
 - The two browsers connect directly over WebRTC using [PeerJS](https://peerjs.com), loaded from a CDN only when online play is used. PeerJS's free public broker introduces the two players; no game data passes through it and there is no server of our own.
 - Only inputs are sent: a flick, a shot declaration, a goalkeeper placement. Each side runs the flick in its own physics, then the side that flicked sends the resting position and the other adopts it, so the two tables cannot drift apart.
+- When a player leaves or closes the page the other is told at once (a `bye` message); a silently dropped connection is noticed after about 7 seconds without a heartbeat. Either way a panel offers to wait or to leave.
 - Either player can reload the page and carry on: the guest rejoins from the invite link, the host reopens the same room (same browser tab), and the position is taken from whoever still has it.
 - Limits: some networks (mostly corporate or mobile ones) block direct connections, and there is no relay server to fall back on. There is no protection against a modified client, no matchmaking and no turn clock.
 - Testing: `?net=local` replaces WebRTC with a `BroadcastChannel` between two tabs of the same browser.
