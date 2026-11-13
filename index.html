@@ -67,7 +67,9 @@ body.overlay #status.show{opacity:1}
 .menu{display:flex;flex-direction:column;gap:10px;align-items:stretch}
 .menu .seg button{flex:1}
 .row{display:flex;gap:8px}
-.row input{flex:1;min-width:0;font:600 14px/1 var(--body);color:var(--chalk);background:#0c0906;border:1px solid var(--line);border-radius:9px;padding:10px 11px;-webkit-user-select:text;user-select:text}
+.row button{flex:1}
+.row input+button{flex:none}
+.row input,.field{flex:1;min-width:0;font:600 14px/1 var(--body);color:var(--chalk);background:#0c0906;border:1px solid var(--line);border-radius:9px;padding:10px 11px;-webkit-user-select:text;user-select:text}
 #inCode{text-transform:uppercase;letter-spacing:.18em;text-align:center}
 .ver{margin:14px 0 0!important;font-size:12px}
 /* online guest: the table is turned round, so the scoreboard is mirrored to match */
@@ -122,7 +124,10 @@ button:focus-visible{outline:2px solid var(--chalk);outline-offset:2px}
       <div class="menu">
         <button class="primary" id="bHost">Create a room</button>
         <div class="row" id="joinRow"><input id="inCode" maxlength="5" placeholder="Room code" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-label="Room code"><button id="bJoin">Join</button></div>
-        <div class="row" id="linkRow" hidden><input id="inLink" readonly aria-label="Invite link"><button class="primary" id="bCopy">Share link</button></div>
+        <div id="linkRow" class="menu" hidden>
+          <input class="field" id="inLink" readonly aria-label="Invite link">
+          <div class="row"><button class="primary" id="bCopy">Copy link</button><button id="bShare" hidden>Share…</button></div>
+        </div>
         <button id="bLeave" hidden>Leave the online game</button>
         <button id="bNetClose">Back</button>
       </div>
@@ -888,7 +893,7 @@ document.addEventListener('keydown',e=>{
    flicked sends the resulting position (a snapshot) and the other adopts it, so
    small numeric differences between devices can never build up. `seq` counts
    snapshots: after a reconnect the side with the higher count is the one to trust. */
-const VERSION='0.9.3', BUILD='2026-11-12';
+const VERSION='0.9.4', BUILD='2026-11-12';
 const PEERJS=['https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'];
 let net=null, netCode='', myTeam=0, linked=false, everLinked=false, needSync=false, awaitSync=false, helloDue=false, seq=0, inbox=[], lastRx=0, flip=false, gone='';
 function netSend(m){if(net&&linked) try{net.send(m)}catch(e){}}
@@ -1054,12 +1059,19 @@ $('inCode').addEventListener('keydown',e=>{if(e.key==='Enter') $('bJoin').click(
 $('bLeave').onclick=$('bAwayLeave').onclick=()=>{setMode('cpu'); newMatch(); netUI(); $('net').hidden=true};
 $('bAwayWait').onclick=()=>{$('away').hidden=true};
 window.addEventListener('pagehide',()=>netSend({t:'bye'}));
+// Copy link: straight to the clipboard, with the older select-and-copy command as a fallback
 $('bCopy').onclick=async()=>{
-  const url=inviteLink(), b=$('bCopy');
-  try{if(navigator.share){await navigator.share({title:'Futebol de Botão',text:'Play me at futebol de botão',url}); return}}catch(e){if(e&&e.name==='AbortError') return}
-  try{await navigator.clipboard.writeText(url); b.textContent='Copied'}catch(e){$('inLink').select(); b.textContent='Select and copy'}
-  setTimeout(()=>{b.textContent='Share link'},1800);
+  const url=inviteLink(), b=$('bCopy'); let ok=false;
+  try{await navigator.clipboard.writeText(url); ok=true}catch(e){}
+  if(!ok) try{const i=$('inLink'); i.focus(); i.select(); i.setSelectionRange(0,url.length); ok=document.execCommand('copy')}catch(e){}
+  b.textContent=ok?'Copied ✓':'Press and hold the link to copy';
+  clearTimeout(b.t); b.t=setTimeout(()=>{b.textContent='Copy link'},2200);
 };
+// Share…: the device's own share sheet, where the browser has one
+if(navigator.share){
+  $('bShare').hidden=false;
+  $('bShare').onclick=()=>{navigator.share({title:'Futebol de Botão',text:'Play me at futebol de botão',url:inviteLink()}).catch(()=>{})};
+}
 
 function start(data){
   if(data&&data.mode) mode=data.mode==='2p'?'2p':'cpu';
